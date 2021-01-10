@@ -4,16 +4,17 @@
 
 #include <Wire.h>
 #include <ESP8266WiFi.h>
+#include <BlynkSimpleStream.h>
 #include <ezTime.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_GFX.h>
-#include <Fonts/FreeSerif12pt7b.h>
 
 #include "settings.hpp"
 
 // Init stuff
 ADC_MODE(ADC_VCC);                                   // for boot-up Vcc display
 Adafruit_SSD1306 display(128, 64, &Wire, -1);        // height, width, lib, reset pin
+WiFiClient blynkWiFiClient;     // WiFi client for the Blynk features
 Timezone tz;    // eztime timezone obj
 char buf[24];   // text output buffer
 
@@ -45,8 +46,21 @@ void beep() {
     analogWrite(15, 0);
 }
 
+
+// --- BLYNK METHODS ---
+
+// Display Vcc
+BLYNK_READ(V3) {
+    Blynk.virtualWrite(V3, system_get_vdd33() / 1000.0);
+}
+
+// Reset
+BLYNK_WRITE(V99) {
+    ESP.reset();
+}
+
 void setup() {
-    beep();
+    if (settings::DEBUG) beep();
 
     display.begin(SSD1306_SWITCHCAPVCC, 0x3C);              // I2C address
     display.display(); display.clearDisplay();              // clear splash screen
@@ -82,6 +96,12 @@ void setup() {
     tz.setLocation(settings::TIMEZONE);
     setInterval(120);
 
+    // Init Blynk
+    blynkWiFiClient.stop();
+    blynkWiFiClient.connect(BLYNK_DEFAULT_DOMAIN, BLYNK_DEFAULT_PORT);
+    Blynk.begin(blynkWiFiClient, settings::BLYNK_AUTH_TOKEN);
+    Blynk.virtualWrite(V2, WiFi.SSID());    // push SSID to Blynk
+
     // Display IP, Vcc, freq
     if (settings::DEBUG) {
         display.clearDisplay();
@@ -100,6 +120,9 @@ void setup() {
 void loop() {
     // Run ezTime events
     events();
+
+    // Run Blynk events
+    Blynk.run();
 
     // Display time
     if (secondChanged()) {

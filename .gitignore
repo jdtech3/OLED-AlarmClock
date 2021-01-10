@@ -1,0 +1,6 @@
+# Editor specific
+.pio/
+.vscode/
+
+# Sekrit settings
+include/settings.hpp

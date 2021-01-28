@@ -12,8 +12,8 @@
 #include "settings.hpp"
 
 // Init stuff
-ADC_MODE(ADC_VCC);                                   // for boot-up Vcc display
-Adafruit_SSD1306 display(128, 64, &Wire, -1);        // height, width, lib, reset pin
+ADC_MODE(ADC_VCC);                              // for boot-up Vcc display
+Adafruit_SSD1306 display(128, 64, &Wire, -1);   // height, width, lib, reset pin
 WiFiClient blynkWiFiClient;     // WiFi client for the Blynk features
 Timezone tz;    // eztime timezone obj
 char buf[24];   // text output buffer
@@ -39,22 +39,99 @@ const unsigned char jLogoBitmap [] PROGMEM = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-// Beep!
+// Beep! (+ make screen blink)
 void beep() {
     analogWrite(15, 128);
-    delay(50);
+    display.fillScreen(WHITE); display.display();
+
+    delay(100);
+
     analogWrite(15, 0);
+    display.clearDisplay(); display.display();
 }
 
+// Alarm
+void alarm() {
+    // Beeping
+    for (int i = 0; i < 20; i++) {
+        beep();
+        delay(100);
+    }
+
+    // Refresh time inputs so next alarm gets added
+    Blynk.syncVirtual(V0, V1);
+}
+
+// Add alarm based on Blynk time input values
+// (note: only adds the very next alarm!)
+void addAlarm(TimeInputParam t) {
+    uint8_t dow = atoi(tz.dateTime("N").c_str());   // day of week of today
+
+    // Loop starting from today, but wrap around
+    uint8_t i = dow;
+    bool done = false;
+    while (!done) {
+        // Exit before reaching today again
+        uint8_t j = (dow - 1) < 0 ? dow + 6 : dow - 1;
+        done = j == i;
+
+        if (t.isWeekdaySelected(i)) {
+            // Calc days until next weekday (adapted from Boost lib)
+            int8_t delta = i - dow;     // both values use Monday as 1
+            if (delta < 0) delta += 7;
+
+            // Set ezTime event and exit (if alarm time is not in the past)
+            time_t nextAlarm = makeTime(t.getStartHour(), t.getStartMinute(), t.getStartSecond(), tz.day(), tz.month(), tz.year()) + (delta * 86400);
+            if ((nextAlarm - tz.now()) > 0) {
+                setEvent(alarm, nextAlarm);
+                break;
+            }
+        }
+
+        // Increment i or wrap around to 1 if reached Sunday
+        i == 7 ? i = 1 : i++;
+    }
+}
+
+// Signify updates on screen
+void indicateUpdate() {
+    // Print 'U' on bottom left of display
+    display.setCursor(0, 56);
+    display.setTextSize(1);
+    display.print('U');
+    display.display();
+
+    delay(50);
+
+    // Clear
+    display.setCursor(0, 56);
+    display.print(' ');
+    display.display();
+}
 
 // --- BLYNK METHODS ---
+
+// Alarm time inputs
+BLYNK_WRITE(V0) {
+    addAlarm((TimeInputParam) param);
+    indicateUpdate();
+}
+BLYNK_WRITE(V1) {
+    addAlarm((TimeInputParam) param);
+    indicateUpdate();
+}
 
 // Display Vcc
 BLYNK_READ(V3) {
     Blynk.virtualWrite(V3, system_get_vdd33() / 1000.0);
 }
 
-// Reset
+// Beep button
+BLYNK_WRITE(V10) {
+    if (param.asInt()) beep();  // only trigger on push, not release
+}
+
+// Reset button
 BLYNK_WRITE(V99) {
     ESP.reset();
 }
@@ -94,6 +171,7 @@ void setup() {
     // Init ezTime
     waitForSync();
     tz.setLocation(settings::TIMEZONE);
+    tz.setDefault();
     setInterval(120);
 
     // Init Blynk
@@ -101,6 +179,7 @@ void setup() {
     blynkWiFiClient.connect(BLYNK_DEFAULT_DOMAIN, BLYNK_DEFAULT_PORT);
     Blynk.begin(blynkWiFiClient, settings::BLYNK_AUTH_TOKEN);
     Blynk.virtualWrite(V2, WiFi.SSID());    // push SSID to Blynk
+    Blynk.syncVirtual(V0, V1);              // force pull of time input data
 
     // Display IP, Vcc, freq
     if (settings::DEBUG) {

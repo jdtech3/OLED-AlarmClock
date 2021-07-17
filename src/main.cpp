@@ -18,6 +18,10 @@ WiFiClient blynkWiFiClient;     // WiFi client for the Blynk features
 Timezone tz;    // eztime timezone obj
 char buf[24];   // text output buffer
 
+// Store alarm times
+time_t alarmOne;
+time_t alarmTwo;
+
 const unsigned char jLogoBitmap [] PROGMEM = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00,
@@ -59,12 +63,10 @@ void alarm() {
     }
 
     // Refresh time inputs so next alarm gets added
-    Blynk.syncVirtual(V0, V1);
+    Blynk.syncVirtual(V2);
 }
 
-// Add alarm based on Blynk time input values
-// (note: only adds the very next alarm!)
-void addAlarm(TimeInputParam t) {
+time_t parseTimeInput(TimeInputParam t) {
     uint8_t dow = atoi(tz.dateTime("N").c_str());   // day of week of today
 
     // Loop starting from today, but wrap around
@@ -80,11 +82,10 @@ void addAlarm(TimeInputParam t) {
             int8_t delta = i - dow;     // both values use Monday as 1
             if (delta < 0) delta += 7;
 
-            // Set ezTime event and exit (if alarm time is not in the past)
+            // Return time and exit (if alarm time is not in the past)
             time_t nextAlarm = makeTime(t.getStartHour(), t.getStartMinute(), t.getStartSecond(), tz.day(), tz.month(), tz.year()) + (delta * 86400);
             if ((nextAlarm - tz.now()) > 0) {
-                setEvent(alarm, nextAlarm);
-                break;
+                return nextAlarm;
             }
         }
 
@@ -109,26 +110,85 @@ void indicateUpdate() {
     display.display();
 }
 
+// Show alarm status on screen
+void indicateAlarmOn(bool alarmOneOn, bool alarmTwoOn) {
+    // Clear the space
+    display.setTextSize(1);
+    display.setCursor(116, 56);
+    display.print("  ");
+
+    // Print alarms enabled on bottom right of display
+    if (alarmOneOn) {
+        display.setCursor(116, 56);
+        display.print('1');
+    }
+    if (alarmTwoOn) {
+        display.setCursor(122, 56);
+        display.print('2');
+    }
+    display.display();
+}
+
 // --- BLYNK METHODS ---
 
 // Alarm time inputs
 BLYNK_WRITE(V0) {
-    addAlarm((TimeInputParam) param);
+    alarmOne = parseTimeInput((TimeInputParam) param);
     indicateUpdate();
 }
 BLYNK_WRITE(V1) {
-    addAlarm((TimeInputParam) param);
+    alarmTwo = parseTimeInput((TimeInputParam) param);
+    indicateUpdate();
+}
+
+// Alarm on/off buttons
+BLYNK_WRITE(V2) {
+    // Clear all old alarms and sync alarm time inputs
+    deleteEvent(alarm);
+    Blynk.syncVirtual(V0, V1);
+
+    switch (param.asInt()) {
+        // off
+        case 1: {
+            indicateAlarmOn(false, false);
+            break;
+        }
+        // alarm 1
+        case 2: {
+            setEvent(alarm, alarmOne);
+            indicateAlarmOn(true, false);
+            break;
+        }
+        // alarm 2
+        case 3: {
+            setEvent(alarm, alarmTwo);
+            indicateAlarmOn(false, true);
+            break;
+        }
+        // both
+        case 4: {
+            setEvent(alarm, alarmOne);
+            setEvent(alarm, alarmTwo);
+            indicateAlarmOn(true, true);
+            break;
+        }
+    }
+
     indicateUpdate();
 }
 
 // Display Vcc
-BLYNK_READ(V3) {
-    Blynk.virtualWrite(V3, system_get_vdd33() / 1000.0);
+BLYNK_READ(V20) {
+    Blynk.virtualWrite(V20, system_get_vdd33() / 1000.0);
 }
 
 // Beep button
-BLYNK_WRITE(V10) {
-    if (param.asInt()) beep();  // only trigger on push, not release
+BLYNK_WRITE(V98) {
+    // Only trigger on push, not release
+    if (param.asInt()) {
+        beep();
+        Blynk.syncVirtual(V2);
+    }
 }
 
 // Reset button
@@ -139,15 +199,17 @@ BLYNK_WRITE(V99) {
 void setup() {
     if (settings::DEBUG) beep();
 
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);              // I2C address
-    display.display(); display.clearDisplay();              // clear splash screen
-    display.drawBitmap(40, 12, jLogoBitmap, 48, 48, WHITE); // display logo
-    display.display();
-
     // Set initial display settings
-    display.setTextSize(1);
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // init display w/ I2C address
+    display.display();          // clear splash screen
+    display.clearDisplay();
+    display.setTextSize(1);     // text settings
     display.setTextColor(WHITE, BLACK);
     display.setCursor(0, 0);
+
+    // Display logo
+    display.drawBitmap(40, 12, jLogoBitmap, 48, 48, WHITE);
+    display.display();
 
     if (settings::DEBUG) {
         // Display voltage
@@ -172,14 +234,14 @@ void setup() {
     waitForSync();
     tz.setLocation(settings::TIMEZONE);
     tz.setDefault();
-    setInterval(120);
+    setInterval(900);   // query NTP every 15 minutes
 
     // Init Blynk
     blynkWiFiClient.stop();
     blynkWiFiClient.connect(BLYNK_DEFAULT_DOMAIN, BLYNK_DEFAULT_PORT);
     Blynk.begin(blynkWiFiClient, settings::BLYNK_AUTH_TOKEN);
-    Blynk.virtualWrite(V2, WiFi.SSID());    // push SSID to Blynk
-    Blynk.syncVirtual(V0, V1);              // force pull of time input data
+    Blynk.virtualWrite(V21, WiFi.SSID());   // push SSID to Blynk
+    Blynk.syncVirtual(V2);  // init alarms
 
     // Display IP, Vcc, freq
     if (settings::DEBUG) {
@@ -206,9 +268,9 @@ void loop() {
     // Display time
     if (secondChanged()) {
         // Print date
-        display.setCursor(56, 0);
+        display.setCursor(32, 0);
         display.setTextSize(1);
-        display.println(tz.dateTime("M j, Y"));
+        display.println(tz.dateTime("D M j, Y"));
 
         // Print time
         display.setCursor(0, 24);

@@ -4,8 +4,8 @@ Alarm clock powered by ESP8266 and NTP
 ### Features:
 
 - [x] Connects to WiFi, queries NTP server, and displays current time/date
-- [x] Alarm functionality
-- [x] Blynk integration?
+- [x] Alarm functionality (2 alarms; individual on/off)
+- [x] Blynk integration (required for alarm function)
 
 ### Notes:
 

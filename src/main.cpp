@@ -22,6 +22,10 @@ char buf[24];   // text output buffer
 time_t alarmOne;
 time_t alarmTwo;
 
+// For display on/off button
+int btnState;       // 'flash' button state
+bool displayOn;     // display on?
+
 const unsigned char jLogoBitmap [] PROGMEM = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00,
@@ -86,6 +90,9 @@ time_t parseTimeInput(TimeInputParam t) {
             time_t nextAlarm = makeTime(t.getStartHour(), t.getStartMinute(), t.getStartSecond(), tz.day(), tz.month(), tz.year()) + (delta * 86400);
             if ((nextAlarm - tz.now()) > 0) {
                 return nextAlarm;
+            }
+            else if (delta == 0) {
+                return nextAlarm + (7 * 86400);
             }
         }
 
@@ -197,8 +204,6 @@ BLYNK_WRITE(V99) {
 }
 
 void setup() {
-    if (settings::DEBUG) beep();
-
     // Set initial display settings
     display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // init display w/ I2C address
     display.display();          // clear splash screen
@@ -206,16 +211,12 @@ void setup() {
     display.setTextSize(1);     // text settings
     display.setTextColor(WHITE, BLACK);
     display.setCursor(0, 0);
+    display.ssd1306_command(SSD1306_SETCONTRAST);
+    display.ssd1306_command(0x00);
 
     // Display logo
     display.drawBitmap(40, 12, jLogoBitmap, 48, 48, WHITE);
     display.display();
-
-    if (settings::DEBUG) {
-        // Display voltage
-        sprintf(buf, "Vcc: %.2fV", system_get_vdd33() / 1000.0);
-        display.println(buf);
-    }
 
     // Connect to WiFi
     WiFi.mode(WIFI_STA);
@@ -235,18 +236,27 @@ void setup() {
     tz.setLocation(settings::TIMEZONE);
     tz.setDefault();
     setInterval(900);   // query NTP every 15 minutes
+    if (settings::DEBUG) {
+        Serial.begin(115200);
+        setDebug(DEBUG);
+    }
 
     // Init Blynk
     blynkWiFiClient.stop();
     blynkWiFiClient.connect(BLYNK_DEFAULT_DOMAIN, BLYNK_DEFAULT_PORT);
     Blynk.begin(blynkWiFiClient, settings::BLYNK_AUTH_TOKEN);
     Blynk.virtualWrite(V21, WiFi.SSID());   // push SSID to Blynk
-    Blynk.syncVirtual(V2);  // init alarms
+    Blynk.syncVirtual(V0, V1, V2);          // init alarms
 
     // Display IP, Vcc, freq
     if (settings::DEBUG) {
         display.clearDisplay();
-        display.setCursor(0, 48);
+        beep();
+
+        // Display voltage
+        display.setCursor(0, 40);
+        sprintf(buf, "Vcc: %.2fV", system_get_vdd33() / 1000.0);
+        display.println(buf);
         display.println(F("Connected."));
         display.println(String("IP: ") + WiFi.localIP().toString());
     }
@@ -280,5 +290,22 @@ void loop() {
         display.println(tz.dateTime(" A"));
 
         display.display();  // update display
+    }
+
+    // Button
+    int newBtnState = digitalRead(0);
+    if (newBtnState != btnState) {
+        if (newBtnState == LOW) {
+            if (displayOn) {
+                display.ssd1306_command(SSD1306_DISPLAYOFF);
+                displayOn = false;
+            }
+            else {
+                display.ssd1306_command(SSD1306_DISPLAYON);
+                displayOn = true;
+            }
+        }
+        btnState = newBtnState;
+        delay(50);
     }
 }

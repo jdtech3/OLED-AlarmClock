@@ -16,6 +16,10 @@ Alarm clock powered by ESP8266 and NTP
 
 <img src="https://cdn.discordapp.com/attachments/486266126129430562/804248242891784202/IMG_20210127_231427.jpg" width="600">
 
+### Blynk interface
+
+<img src="https://cdn.discordapp.com/attachments/486266126129430562/902793995464372224/Screenshot_20211026_223952.jpg" height="500">
+
 ---
 
 *This project is licensed under the MIT license. For more information, please see [LICENSE](./LICENSE.md).*

@@ -14,11 +14,11 @@ Alarm clock powered by ESP8266 and NTP
 
 ### "Screenshot"
 
-<img src="https://cdn.discordapp.com/attachments/486266126129430562/804248242891784202/IMG_20210127_231427.jpg" width="600">
+<img src="https://github.com/jdtech3/OLED-AlarmClock/assets/8998191/7230a93b-13d7-4039-8f31-3bbfc6a25f07" width="600">
 
 ### Blynk interface
 
-<img src="https://cdn.discordapp.com/attachments/486266126129430562/902793995464372224/Screenshot_20211026_223952.jpg" height="500">
+<img src="https://github.com/jdtech3/OLED-AlarmClock/assets/8998191/501da09f-fe8e-4510-a1b7-0e527312102f" height="500">
 
 ---
 
